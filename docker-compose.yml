@@ -1,0 +1,79 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${JOBPILOT_DB_PASSWORD:-jobpilot}
+      MYSQL_DATABASE: resume_system
+    ports: ["3306:3306"]
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./infra/mysql/001-schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p$${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  redis:
+    image: redis:7.4-alpine
+    ports: ["6379:6379"]
+    volumes: ["redis_data:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: jobpilot_ai
+      POSTGRES_USER: jobpilot
+      POSTGRES_PASSWORD: ${JOBPILOT_VECTOR_DB_PASSWORD:-jobpilot}
+    ports: ["5432:5432"]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/001-ai-schema.sql:/docker-entrypoint-initdb.d/001-ai-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jobpilot -d jobpilot_ai"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  ai-service:
+    build: ./ai-service
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      AI_ENVIRONMENT: production
+      AI_INTERNAL_API_KEY: ${AI_INTERNAL_API_KEY:-change-me}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_MODEL_BASE_URL: ${AI_MODEL_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      AI_CHAT_MODEL: ${AI_CHAT_MODEL:-qwen-plus}
+    ports: ["8000:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  backend:
+    build: ./backend
+    environment:
+      SPRING_PROFILES_ACTIVE: pro
+      JOBPILOT_DB_HOST: mysql
+      JOBPILOT_DB_USERNAME: root
+      JOBPILOT_DB_PASSWORD: ${JOBPILOT_DB_PASSWORD:-jobpilot}
+      JOBPILOT_REDIS_HOST: redis
+      JOBPILOT_JWT_SECRET: ${JOBPILOT_JWT_SECRET:-replace-this-with-a-production-secret-over-32-bytes}
+      JOBPILOT_AI_URL: http://ai-service:8000
+      AI_INTERNAL_API_KEY: ${AI_INTERNAL_API_KEY:-change-me}
+    depends_on:
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      ai-service: { condition: service_healthy }
+    ports: ["8088:8088"]
+  frontend:
+    build: ./frontend
+    depends_on: [backend]
+    ports: ["8080:80"]
+volumes:
+  mysql_data:
+  redis_data:
+  postgres_data:

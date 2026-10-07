@@ -1,0 +1,74 @@
+version: '3'
+
+services:
+  nginx:
+    image: nginx:latest
+    container_name: jobpilot-nginx
+    ports:
+      - 80:80
+    volumes:
+      - /data/jobpilot/nginx/html:/usr/share/nginx/html
+      - /data/jobpilot/nginx/log:/var/log/nginx
+      - /data/jobpilot/nginx/nginx.conf:/etc/nginx/nginx.conf
+    # 开启nginx文件访问权限
+    privileged: true
+
+  mysql:
+    image: mysql:5.7
+    container_name: jobpilot-mysql
+    ports:
+      - 3306:3306
+    volumes:
+      - /data/jobpilot/mysql/data:/var/lib/mysql
+      - /data/jobpilot/mysql/conf:/etc/mysql/conf.d
+    privileged: true
+    restart: always
+    environment:
+      # 设置容器中mysql密码
+      - MYSQL_ROOT_PASSWORD=${JOBPILOT_DB_PASSWORD}
+      - MYSQL_ALLOW_EMPTY_PASSWORD='no'
+      - MYSQL_DATABASE='resume_system'
+      - MYSQL_USER='root'
+      - MYSQL_PASSWORD=${JOBPILOT_DB_PASSWORD}
+    networks:
+      - jobpilot_net
+
+  redis:
+    image: redis:6.2.14
+    container_name: jobpilot-redis
+    volumes:
+      - /data/jobpilot/redis/redis.conf:/etc/redis/redis.conf
+      - /data/jobppilot/redis/data:/data
+    ports:
+      - 6379:6379
+    environment:
+      TZ: Asia/Shanghai
+    privileged: true
+    restart: always
+    networks:
+      - jobpilot_net
+    command: redis-server /etc/redis/redis.conf
+
+  jobpilot-backend: # 自己项目名字，自定
+    # image: jobpilot-backend:latest
+    container_name: jobpilot-backend
+    build: ./backend
+    ports:
+      - 8088:8088
+    networks:
+      - jobpilot_net
+    depends_on:
+      - mysql
+      - redis
+
+  jobpilot-model:
+    build: ./model
+    container_name: jobpilot-model
+    ports:
+      - 12345:12345
+    networks:
+      - jobpilot_net
+
+networks:
+  jobpilot_net:
+    driver: bridge

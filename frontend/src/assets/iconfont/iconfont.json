@@ -1,0 +1,30 @@
+{
+  "id": "4434831",
+  "name": "123123",
+  "font_family": "iconfont",
+  "css_prefix_text": "icon-",
+  "description": "",
+  "glyphs": [
+    {
+      "icon_id": "1799692",
+      "name": "工作台",
+      "font_class": "gongzuotai",
+      "unicode": "e665",
+      "unicode_decimal": 58981
+    },
+    {
+      "icon_id": "11372763",
+      "name": "定位",
+      "font_class": "dingwei",
+      "unicode": "e8c4",
+      "unicode_decimal": 59588
+    },
+    {
+      "icon_id": "16942376",
+      "name": "学历",
+      "font_class": "xueli",
+      "unicode": "e612",
+      "unicode_decimal": 58898
+    }
+  ]
+}

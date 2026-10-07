@@ -1,0 +1,16 @@
+env:
+  name: pro
+
+jobpilot:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    host: ${JOBPILOT_DB_HOST:localhost}
+    port: 3306
+    database: resume_system
+    username: ${JOBPILOT_DB_USERNAME:root}
+    password: ${JOBPILOT_DB_PASSWORD:}
+  redis:
+    host: ${JOBPILOT_REDIS_HOST:localhost}
+    port: 6379
+    password: ${JOBPILOT_REDIS_PASSWORD:}
+    database: 10
