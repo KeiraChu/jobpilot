@@ -30,6 +30,24 @@ class ModelProvider:
                     await asyncio.sleep(0.5 * 2**attempt)
         raise RuntimeError("模型服务暂时不可用") from error
 
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        error = None
+        for attempt in range(self.settings.max_retries + 1):
+            try:
+                response = await self.client.post("/embeddings", json={
+                    "model": self.settings.embedding_model,
+                    "input": texts,
+                })
+                response.raise_for_status()
+                rows = sorted(response.json()["data"], key=lambda item: item["index"])
+                if len(rows) != len(texts):
+                    raise ValueError("Embedding 返回数量与输入不一致")
+                return [row["embedding"] for row in rows]
+            except (httpx.HTTPError, KeyError, ValueError) as exc:
+                error = exc
+                if attempt < self.settings.max_retries:
+                    await asyncio.sleep(0.5 * 2**attempt)
+        raise RuntimeError("Embedding 服务暂时不可用") from error
+
     async def close(self):
         await self.client.aclose()
-

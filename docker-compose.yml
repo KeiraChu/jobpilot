@@ -47,6 +47,8 @@ services:
       AI_API_KEY: ${AI_API_KEY:-}
       AI_MODEL_BASE_URL: ${AI_MODEL_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
       AI_CHAT_MODEL: ${AI_CHAT_MODEL:-qwen-plus}
+      AI_EMBEDDING_MODEL: ${AI_EMBEDDING_MODEL:-text-embedding-v4}
+      AI_RERANK_CANDIDATES: ${AI_RERANK_CANDIDATES:-8}
     ports: ["8000:8000"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]

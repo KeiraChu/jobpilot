@@ -3,7 +3,10 @@ import re
 from collections import Counter
 
 from app.parsing import extract_skills
-from app.schemas import MatchResult, PositionInput, RecommendRequest, ScoreBreakdown
+from app.schemas import MatchResult, PositionInput, RecommendRequest, ScoreBreakdown, SkillGapAction
+
+
+WEIGHTS = {"semantic": 0.38, "skill_coverage": 0.37, "preference": 0.15, "hard_constraints": 0.10}
 
 
 def tokens(text: str) -> list[str]:
@@ -28,6 +31,21 @@ def cosine_text(a: str, b: str) -> float:
     return numerator / denominator if denominator else 0.0
 
 
+def improvement_actions(missing: list[str], job_skill_count: int) -> list[SkillGapAction]:
+    """Estimate the auditable score gain of adding one verified skill at a time."""
+    if not job_skill_count:
+        return []
+    gain = round(100 * WEIGHTS["skill_coverage"] / job_skill_count, 2)
+    return [
+        SkillGapAction(
+            skill=skill,
+            estimated_score_gain=gain,
+            evidence_requirement=f"补充能证明 {skill} 的项目任务、代码或结果，经本人确认后再写入简历",
+        )
+        for skill in missing[:5]
+    ]
+
+
 def rank(request: RecommendRequest) -> list[MatchResult]:
     profile = request.profile
     resume_text = " ".join([
@@ -46,7 +64,12 @@ def rank(request: RecommendRequest) -> list[MatchResult]:
         preference = cosine_text(profile.target_role, position.title) if profile.target_role else 0.5
         city = 1.0 if not profile.city_preferences or any(c in position.address for c in profile.city_preferences) else 0.4
         hard = city
-        score = 100 * (0.38 * semantic + 0.37 * coverage + 0.15 * preference + 0.10 * hard)
+        score = 100 * (
+            WEIGHTS["semantic"] * semantic
+            + WEIGHTS["skill_coverage"] * coverage
+            + WEIGHTS["preference"] * preference
+            + WEIGHTS["hard_constraints"] * hard
+        )
         evidence = [f"简历技能：{skill}" for skill in matched[:5]]
         reasons = ([f"已覆盖 {len(matched)}/{len(job_skills)} 项可识别技能要求"] if job_skills else ["岗位技能要求较少，主要按语义相关度排序"])
         if preference >= 0.5:
@@ -61,5 +84,11 @@ def rank(request: RecommendRequest) -> list[MatchResult]:
             ),
             matched_skills=matched, missing_skills=missing, evidence=evidence,
             reasons=reasons, risks=risks,
+            improvement_actions=improvement_actions(missing, len(job_skills)),
+            decision_trace=[
+                "只使用岗位文本、简历中的技能证据、目标方向和城市偏好参与排序",
+                "不读取性别、年龄、照片等个人属性",
+                "补强收益仅估算单项技能覆盖分的变化，不代表录用概率",
+            ],
         ))
     return sorted(results, key=lambda x: x.score, reverse=True)[: request.top_k]

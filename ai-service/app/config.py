@@ -10,12 +10,13 @@ class Settings(BaseSettings):
     api_key: str = ""
     model_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     chat_model: str = "qwen-plus"
+    embedding_model: str = "text-embedding-v4"
     timeout_seconds: float = 45
     max_retries: int = 2
     top_k: int = 10
+    rerank_candidates: int = 8
 
 
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-

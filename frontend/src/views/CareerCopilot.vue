@@ -10,7 +10,7 @@
         <el-input v-model="targetRole" placeholder="目标岗位，例如：AI 应用开发实习生" />
         <input ref="file" type="file" accept=".pdf,.docx,.txt,.md" @change="selectFile">
         <el-button type="primary" :loading="loading" @click="analyze">开始分析</el-button>
-        <small>支持 PDF、DOCX、TXT、Markdown，最大 20MB</small>
+        <small>支持 PDF、DOCX、TXT、Markdown，最大 20MB。请使用脱敏简历；启用外部模型后，简历文本会用于 Embedding 与候选重排。</small>
       </div>
     </section>
 
@@ -29,6 +29,7 @@
     </section>
 
     <section v-if="matches.length" class="results">
+      <p class="ranking-mode">推荐链路：{{ rankingModeLabel }}</p>
       <article v-for="match in matches" :key="match.position.position_id" class="match-card">
         <div class="score">{{ Math.round(match.score) }}<small>匹配分</small></div>
         <div class="match-main">
@@ -45,6 +46,13 @@
           <div class="columns">
             <div><h3>匹配证据</h3><p v-for="item in match.reasons" :key="item">✓ {{ item }}</p></div>
             <div><h3>需要补足</h3><p v-for="item in match.risks" :key="item">△ {{ item }}</p></div>
+          </div>
+          <div v-if="match.improvement_actions && match.improvement_actions.length" class="actions">
+            <h3>优先补强</h3>
+            <p v-for="item in match.improvement_actions" :key="item.skill">
+              <strong>{{ item.skill }}</strong> · 技能覆盖分预计 +{{ item.estimated_score_gain }} ｜ {{ item.evidence_requirement }}
+            </p>
+            <small>{{ match.decision_trace.join('；') }}</small>
           </div>
           <div class="feedback">
             <span>这个推荐有帮助吗？</span>
@@ -74,7 +82,12 @@
 import { createCareerPlan, recommendWithProfile, submitRecommendationFeedback, uploadResume } from '../api/position'
 
 export default {
-  data: () => ({ targetRole: 'AI 应用开发实习生', file: null, loading: false, reranking: false, profile: null, matches: [], warnings: [], plan: null, planVisible: false, skillInputVisible: false, skillInput: '' }),
+  data: () => ({ targetRole: 'AI 应用开发实习生', file: null, loading: false, reranking: false, profile: null, matches: [], warnings: [], rankingMode: 'BASELINE', plan: null, planVisible: false, skillInputVisible: false, skillInput: '' }),
+  computed: {
+    rankingModeLabel() {
+      return { BASELINE: '可解释基线', EMBEDDING: 'Embedding 混合召回', LLM_RERANK: 'Embedding 混合召回 + 大模型重排' }[this.rankingMode] || this.rankingMode
+    }
+  },
   methods: {
     selectFile(event) { this.file = event.target.files[0] },
     removeSkill(skill) { this.profile.skills = this.profile.skills.filter(item => item !== skill) },
@@ -94,6 +107,7 @@ export default {
         this.profile = response.data.profile
         this.matches = response.data.results || []
         this.warnings = response.data.warnings || []
+        this.rankingMode = response.data.ranking_mode || 'BASELINE'
       } catch (error) {
         this.$message.error(error.message || '分析失败')
       } finally { this.loading = false }
@@ -105,6 +119,7 @@ export default {
         if (response.code !== 200) throw new Error(response.msg)
         this.matches = response.data.results || []
         this.warnings = response.data.warnings || []
+        this.rankingMode = response.data.ranking_mode || 'BASELINE'
         this.$message.success('已按确认后的能力画像重新匹配')
       } catch (error) { this.$message.error(error.message || '重新匹配失败') }
       finally { this.reranking = false }
@@ -129,5 +144,5 @@ export default {
 </script>
 
 <style scoped>
-.copilot{min-height:100vh;background:#f4f7fb;padding:40px 7%;color:#152238}.hero{display:grid;grid-template-columns:1.4fr 1fr;gap:30px;padding:42px;border-radius:24px;background:linear-gradient(135deg,#081d3a,#1454a3);color:white}.hero h1{font-size:40px;margin:8px 0 16px}.eyebrow{letter-spacing:2px;color:#7dd3fc}.upload-card{display:flex;flex-direction:column;gap:14px;background:white;color:#526174;padding:24px;border-radius:16px}.panel,.match-card{background:white;border-radius:18px;padding:24px;margin-top:22px;box-shadow:0 8px 30px rgba(15,42,80,.07)}.panel header,.match-main header{display:flex;justify-content:space-between;align-items:center}.hint{color:#667085}.skills{display:flex;gap:8px;flex-wrap:wrap}.skill-input{width:150px}.rerank{margin-top:18px}.match-card{display:flex;gap:24px}.score{width:90px;height:90px;border-radius:50%;background:#e7f1ff;color:#0759bd;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:30px;font-weight:bold;flex:none}.score small{font-size:12px}.match-main{flex:1}.breakdown{display:flex;gap:12px;flex-wrap:wrap;margin:18px 0}.breakdown span{background:#f0f5fb;padding:7px 12px;border-radius:8px}.columns{display:grid;grid-template-columns:1fr 1fr;gap:24px}.feedback{display:flex;align-items:center;gap:8px;margin-top:18px;padding-top:14px;border-top:1px solid #edf1f6;color:#667085}.step{border-left:3px solid #1677ff;padding-left:14px;margin:14px 0}@media(max-width:800px){.hero,.columns{grid-template-columns:1fr}.match-card{flex-direction:column}.feedback{flex-wrap:wrap}}
+.copilot{min-height:100vh;background:#f4f7fb;padding:40px 7%;color:#152238}.hero{display:grid;grid-template-columns:1.4fr 1fr;gap:30px;padding:42px;border-radius:24px;background:linear-gradient(135deg,#081d3a,#1454a3);color:white}.hero h1{font-size:40px;margin:8px 0 16px}.eyebrow{letter-spacing:2px;color:#7dd3fc}.upload-card{display:flex;flex-direction:column;gap:14px;background:white;color:#526174;padding:24px;border-radius:16px}.panel,.match-card{background:white;border-radius:18px;padding:24px;margin-top:22px;box-shadow:0 8px 30px rgba(15,42,80,.07)}.panel header,.match-main header{display:flex;justify-content:space-between;align-items:center}.hint{color:#667085}.skills{display:flex;gap:8px;flex-wrap:wrap}.skill-input{width:150px}.rerank{margin-top:18px}.ranking-mode{color:#526174;font-size:13px;margin:20px 0 0}.match-card{display:flex;gap:24px}.score{width:90px;height:90px;border-radius:50%;background:#e7f1ff;color:#0759bd;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:30px;font-weight:bold;flex:none}.score small{font-size:12px}.match-main{flex:1}.breakdown{display:flex;gap:12px;flex-wrap:wrap;margin:18px 0}.breakdown span{background:#f0f5fb;padding:7px 12px;border-radius:8px}.columns{display:grid;grid-template-columns:1fr 1fr;gap:24px}.actions{margin-top:16px;padding:14px 16px;background:#f8fafc;border-radius:10px}.actions p{margin:8px 0}.actions small{color:#667085}.feedback{display:flex;align-items:center;gap:8px;margin-top:18px;padding-top:14px;border-top:1px solid #edf1f6;color:#667085}.step{border-left:3px solid #1677ff;padding-left:14px;margin:14px 0}@media(max-width:800px){.hero,.columns{grid-template-columns:1fr}.match-card{flex-direction:column}.feedback{flex-wrap:wrap}}
 </style>

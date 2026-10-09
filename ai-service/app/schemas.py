@@ -50,6 +50,12 @@ class ScoreBreakdown(BaseModel):
     hard_constraints: float
 
 
+class SkillGapAction(BaseModel):
+    skill: str
+    estimated_score_gain: float
+    evidence_requirement: str
+
+
 class MatchResult(BaseModel):
     position: PositionInput
     score: float
@@ -59,10 +65,13 @@ class MatchResult(BaseModel):
     evidence: list[str]
     reasons: list[str]
     risks: list[str]
+    improvement_actions: list[SkillGapAction] = Field(default_factory=list)
+    decision_trace: list[str] = Field(default_factory=list)
 
 
 class RecommendResponse(BaseModel):
-    algorithm_version: str = "hybrid-v2"
+    algorithm_version: str = "hybrid-embedding-llm-rerank-v1"
+    ranking_mode: Literal["BASELINE", "EMBEDDING", "LLM_RERANK"] = "BASELINE"
     results: list[MatchResult]
     warnings: list[str] = Field(default_factory=list)
 

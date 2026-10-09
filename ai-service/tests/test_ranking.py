@@ -7,12 +7,15 @@ from app.schemas import EvaluationCase, PositionInput, RecommendRequest
 def test_ai_position_ranks_first():
     profile = heuristic_profile("Python FastAPI RAG pgvector 项目经验", "AI应用开发")
     positions = [
-        PositionInput(position_id=1, company="A", title="AI应用开发", description="Python FastAPI RAG pgvector"),
+        PositionInput(position_id=1, company="A", title="AI应用开发", description="Python FastAPI RAG pgvector Docker"),
         PositionInput(position_id=2, company="B", title="会计", description="财务报表与税务"),
     ]
     result = rank(RecommendRequest(user_id="1", profile=profile, positions=positions, top_k=2))
     assert result[0].position.position_id == 1
     assert "python" in result[0].matched_skills
+    assert result[0].improvement_actions
+    assert result[0].improvement_actions[0].estimated_score_gain > 0
+    assert "不读取性别、年龄" in result[0].decision_trace[1]
 
 
 def test_metrics():

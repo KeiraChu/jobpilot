@@ -9,10 +9,10 @@ JobPilot 是一个面向学生和初入职场用户的 AI 求职决策平台。�
 ## 核心能力
 
 - PDF、DOCX、TXT、Markdown 简历解析与标准化技能抽取
-- 中英文文本相关度、技能覆盖率、求职方向和城市硬条件组成的可解释排序
-- 匹配证据、缺失技能、风险提示与分数拆解
+- Embedding 语义召回、技能证据和硬条件组成的混合排序，并对候选集执行大模型结构化重排
+- 匹配证据、缺失技能、风险提示、分数拆解与单项技能补强收益估算
 - 面向目标职位的简历修改建议、面试问题和学习路线
-- 没有模型密钥时使用确定性算法运行；配置兼容 OpenAI 的模型服务后可扩展结构化生成
+- 模型重排只能引用简历已识别的技能证据；没有模型密钥或调用失败时自动降级为可解释基线
 - JWT 登录、用户身份由服务端解析、AI 服务内部鉴权
 - Prometheus 指标、推荐离线评测、CI 和 Docker Compose
 
@@ -23,10 +23,12 @@ Vue 2 Web
    │ /api
 Spring Boot ── MySQL / Redis
    │ internal API
-FastAPI AI Service ── parser / hybrid ranker / career workflow
+FastAPI AI Service ── parser / embedding retrieval / LLM reranker / career workflow
    │
 PostgreSQL + pgvector（向量索引表与全文索引基础设施）
 ```
+
+推荐链路先生成可解释基线，再使用 Embedding 语义相关度完成混合召回，最后由大模型在候选集内结构化重排。模型返回的证据必须通过技能白名单校验，不读取性别、年龄、照片等属性；Embedding 或重排失败时逐级降级，不影响基本推荐。每条推荐返回决策轨迹，并明确“补强收益”不代表录用概率。详细分层与取舍见 [架构说明](docs/architecture.md)。
 
 旧的 BERT、Doc2Vec、Neo4j 脚本和手工联调测试归档在 `experiments/`，不再进入在线推荐链路或 CI。在线系统不依赖本机 Socket、固定模型路径或硬编码推荐结果。
 
@@ -65,11 +67,12 @@ pytest -q
 python evals/run.py
 ```
 
-当前 12 条脱敏评测样例覆盖多个目标职位，并计算 Recall@K、Precision@K 与 MRR。公开演示数据只用于回归，真实上线前仍需建立人工标注集。
+当前评测集包含 15 类候选人画像，每类加入目标岗位别名、部分技能缺失和无关技能噪声，共形成 60 条脱敏合成回归样例。可解释基线在该数据集上的 Recall@5 为 82.78%、Precision@5 为 31.33%、MRR 为 91.39%。详细口径见 [评测说明](docs/evaluation.md)。这些结果只用于离线回归，不能代表真实招聘效果；Embedding 与模型重排仍需在配置真实模型后单独评测。
 
 ## 安全与隐私
 
 - 简历属于敏感个人信息，不写入日志，不提交真实简历到仓库。
+- 演示页面明确提示使用脱敏简历；配置外部模型后，简历文本会发送至所配置的 Embedding 和大模型服务，生产环境必须补充用户授权、隐私政策及数据保留说明。
 - 上传限制为 20MB，并只解析明确允许的文档格式。
 - Java API 使用 JWT；用户 ID 由后端登录态确定。
 - Java 与 AI 服务之间使用独立内部密钥。

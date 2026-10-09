@@ -8,7 +8,7 @@ from app.config import Settings, get_settings
 from app.evaluation import evaluate
 from app.parsing import extract_file_text, heuristic_profile
 from app.provider import ModelProvider
-from app.ranking import rank
+from app.recommender import recommend_positions
 from app.schemas import (CareerPlan, CareerPlanRequest, EvaluationCase, EvaluationResult,
                          ParseRequest, RecommendRequest, RecommendResponse, ResumeProfile, PlanStep)
 
@@ -66,11 +66,18 @@ async def parse_resume_file(file: UploadFile = File(...), target_role: str = For
 @app.post("/v1/matches/recommend", response_model=RecommendResponse, dependencies=[Depends(authorize)])
 async def recommend(request: RecommendRequest):
     started = time.perf_counter()
-    results = rank(request)
+    outcome = await recommend_positions(request, provider, get_settings().rerank_candidates)
     LATENCY.labels("recommend").observe(time.perf_counter() - started)
     REQUESTS.labels("recommend", "success").inc()
-    warnings = [] if request.profile.skills else ["简历未识别到技能，推荐结果主要基于文本语义，请先确认解析结果。"]
-    return RecommendResponse(results=results, warnings=warnings)
+    warnings = list(outcome.warnings)
+    if not request.profile.skills:
+        warnings.append("简历未识别到技能，推荐结果主要基于文本语义，请先确认解析结果。")
+    return RecommendResponse(
+        algorithm_version=outcome.algorithm_version,
+        ranking_mode=outcome.ranking_mode,
+        results=outcome.results,
+        warnings=warnings,
+    )
 
 
 @app.post("/v1/workflows/career-plan", response_model=CareerPlan, dependencies=[Depends(authorize)])
@@ -95,4 +102,3 @@ async def career_plan(request: CareerPlanRequest):
 @app.post("/v1/evaluations/recommendation", response_model=EvaluationResult, dependencies=[Depends(authorize)])
 async def evaluate_recommendation(case: EvaluationCase):
     return evaluate(case)
-
