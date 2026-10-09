@@ -1,8 +1,10 @@
 import json
+import logging
 import math
 from dataclasses import dataclass
 
 from app.provider import ModelProvider
+from app.position_store import PositionIndex
 from app.ranking import rank
 from app.schemas import MatchResult, RecommendRequest
 
@@ -61,10 +63,10 @@ async def recommend_positions(
     request: RecommendRequest,
     provider: ModelProvider | None,
     rerank_candidates: int = 8,
+    position_index: PositionIndex | None = None,
 ) -> RecommendationOutcome:
-    candidate_count = min(max(request.top_k, rerank_candidates), len(request.positions), 20)
-    baseline_request = request.model_copy(update={"top_k": candidate_count})
-    candidates = rank(baseline_request)
+    candidate_count = min(max(request.top_k, rerank_candidates), len(request.positions), 50)
+    candidates = rank(request.model_copy(update={"top_k": candidate_count}))
     warnings: list[str] = []
     if provider is None:
         return RecommendationOutcome(
@@ -73,15 +75,27 @@ async def recommend_positions(
         )
 
     try:
-        embeddings = await provider.embed([_profile_text(request), *[_position_text(item) for item in candidates]])
-        resume_embedding, position_embeddings = embeddings[0], embeddings[1:]
+        profile_text = _profile_text(request)
+        resume_embedding = (await provider.embed([profile_text]))[0]
+        if position_index is not None:
+            await position_index.sync(request.positions, provider)
+            retrieved_ids = await position_index.search(profile_text, resume_embedding, candidate_count)
+            by_id = {position.position_id: position for position in request.positions}
+            retrieved = [by_id[position_id] for position_id in retrieved_ids if position_id in by_id]
+            if retrieved:
+                candidates = rank(request.model_copy(update={"positions": retrieved, "top_k": len(retrieved)}))
+            else:
+                warnings.append("持久化混合检索未返回候选，已使用请求内基线候选集。")
+        position_embeddings = await provider.embed([_position_text(item) for item in candidates])
         for result, embedding in zip(candidates, position_embeddings):
             semantic = max(0.0, min(1.0, _cosine(resume_embedding, embedding)))
             result.breakdown.semantic = round(semantic * 100, 2)
             result.score = round(0.55 * result.score + 0.45 * semantic * 100, 2)
-            result.decision_trace.insert(0, "使用 Embedding 语义相关度与技能证据完成混合召回")
+            trace = "通过 pgvector 与全文检索召回候选，再结合技能证据完成排序" if position_index else "使用 Embedding 对基线候选进行语义重排"
+            result.decision_trace.insert(0, trace)
         candidates.sort(key=lambda item: item.score, reverse=True)
     except Exception:
+        logging.getLogger(__name__).exception("embedding retrieval failed")
         return RecommendationOutcome(
             results=candidates[: request.top_k], ranking_mode="BASELINE",
             algorithm_version="evidence-ranker-v3", warnings=["Embedding 服务不可用，已降级为可解释基线排序。"],
@@ -114,18 +128,25 @@ async def recommend_positions(
     try:
         payload = await provider.json(messages, _rerank_schema(), "job_match_rerank")
         by_id = {item.position.position_id: item for item in shortlist}
-        for judgment in payload.get("judgments", []):
+        judgments = payload.get("judgments", [])
+        judgment_ids = [item.get("position_id") for item in judgments]
+        if len(judgments) != len(shortlist) or set(judgment_ids) != set(by_id) or len(judgment_ids) != len(set(judgment_ids)):
+            raise ValueError("模型未返回完整且唯一的候选判断")
+        for judgment in judgments:
             result = by_id.get(judgment.get("position_id"))
             if result is None:
                 continue
             llm_score = max(0.0, min(100.0, float(judgment.get("relevance_score", 0))))
             result.score = round(0.7 * result.score + 0.3 * llm_score, 2)
-            summary = str(judgment.get("summary", "")).strip()
-            if summary:
-                result.reasons.insert(0, f"模型重排：{summary}")
             allowed_evidence = {skill.lower(): skill for skill in result.matched_skills}
             selected = [allowed_evidence[x.lower()] for x in judgment.get("evidence_skills", []) if x.lower() in allowed_evidence]
+            allowed_missing = {skill.lower(): skill for skill in result.missing_skills}
+            missing = [allowed_missing[x.lower()] for x in judgment.get("missing_skills", []) if x.lower() in allowed_missing]
             result.evidence = [f"简历技能：{skill}" for skill in selected] or result.evidence
+            if selected:
+                result.reasons.insert(0, f"模型重排依据：已识别技能包括{'、'.join(selected)}。")
+            if missing:
+                result.risks.insert(0, f"岗位要求中尚未识别：{'、'.join(missing)}。")
             result.decision_trace.insert(0, "大模型仅在候选集内重排，并受结构化输出与证据白名单约束")
         candidates.sort(key=lambda item: item.score, reverse=True)
         return RecommendationOutcome(
@@ -133,6 +154,7 @@ async def recommend_positions(
             algorithm_version="hybrid-embedding-llm-rerank-v1", warnings=warnings,
         )
     except Exception:
+        logging.getLogger(__name__).exception("llm rerank failed")
         warnings.append("模型重排不可用，已保留 Embedding 混合召回结果。")
         return RecommendationOutcome(
             results=candidates[: request.top_k], ranking_mode="EMBEDDING",

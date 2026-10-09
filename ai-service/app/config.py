@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     max_retries: int = 2
     top_k: int = 10
     rerank_candidates: int = 8
+    database_url: str = "postgresql://jobpilot:jobpilot@localhost:5432/jobpilot_ai"
+    use_position_index: bool = True
 
 
 @lru_cache

@@ -25,10 +25,10 @@ Spring Boot ── MySQL / Redis
    │ internal API
 FastAPI AI Service ── parser / embedding retrieval / LLM reranker / career workflow
    │
-PostgreSQL + pgvector（向量索引表与全文索引基础设施）
+PostgreSQL + pgvector（岗位向量持久化、HNSW 与全文检索）
 ```
 
-推荐链路先生成可解释基线，再使用 Embedding 语义相关度完成混合召回，最后由大模型在候选集内结构化重排。模型返回的证据必须通过技能白名单校验，不读取性别、年龄、照片等属性；Embedding 或重排失败时逐级降级，不影响基本推荐。每条推荐返回决策轨迹，并明确“补强收益”不代表录用概率。详细分层与取舍见 [架构说明](docs/architecture.md)。
+配置 pgvector 后，推荐链路先增量同步发生变化的岗位向量，再使用 HNSW 向量检索与全文检索通过 RRF 融合召回候选；候选集结合技能证据排序，最后由大模型执行结构化重排。模型返回的证据必须通过技能白名单校验，不读取性别、年龄、照片等属性；数据库、Embedding 或重排失败时逐级降级，不影响基本推荐。每条推荐返回决策轨迹，并明确“补强收益”不代表录用概率。详细分层与取舍见 [架构说明](docs/architecture.md)。
 
 旧的 BERT、Doc2Vec、Neo4j 脚本和手工联调测试归档在 `experiments/`，不再进入在线推荐链路或 CI。在线系统不依赖本机 Socket、固定模型路径或硬编码推荐结果。
 
@@ -93,7 +93,7 @@ experiments/  早期离线实验和手工联调记录（不参与在线服务）
 
 ## 后续工程边界
 
-- PostgreSQL 已提供 pgvector 与全文索引结构；大规模职位库应将当前请求内排序升级为持久化召回 + Cross-Encoder 重排。
+- 当前已实现持久化向量与全文混合召回；职位规模继续扩大后，应将岗位同步拆为独立离线任务，并评估 Cross-Encoder 或学习排序模型。
 - 扫描版 PDF 需要接入 OCR 服务，当前会明确提示无法提取文本。
 - 推荐效果必须通过扩充后的脱敏标注集验证，不应使用页面上的匹配分代替业务效果评测。
 

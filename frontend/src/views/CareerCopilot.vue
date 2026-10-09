@@ -85,7 +85,7 @@ export default {
   data: () => ({ targetRole: 'AI 应用开发实习生', file: null, loading: false, reranking: false, profile: null, matches: [], warnings: [], rankingMode: 'BASELINE', plan: null, planVisible: false, skillInputVisible: false, skillInput: '' }),
   computed: {
     rankingModeLabel() {
-      return { BASELINE: '可解释基线', EMBEDDING: 'Embedding 混合召回', LLM_RERANK: 'Embedding 混合召回 + 大模型重排' }[this.rankingMode] || this.rankingMode
+      return { BASELINE: '可解释基线', EMBEDDING: 'Embedding 语义排序', LLM_RERANK: '语义排序 + 大模型重排' }[this.rankingMode] || this.rankingMode
     }
   },
   methods: {

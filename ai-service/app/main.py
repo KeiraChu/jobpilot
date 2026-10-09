@@ -1,3 +1,4 @@
+import logging
 import time
 from contextlib import asynccontextmanager
 
@@ -8,25 +9,38 @@ from app.config import Settings, get_settings
 from app.evaluation import evaluate
 from app.parsing import extract_file_text, heuristic_profile
 from app.provider import ModelProvider
+from app.position_store import PositionIndex
 from app.recommender import recommend_positions
 from app.schemas import (CareerPlan, CareerPlanRequest, EvaluationCase, EvaluationResult,
                          ParseRequest, RecommendRequest, RecommendResponse, ResumeProfile, PlanStep)
 
 provider: ModelProvider | None = None
+position_index: PositionIndex | None = None
+logger = logging.getLogger(__name__)
 REQUESTS = Counter("jobpilot_ai_requests_total", "AI requests", ["endpoint", "status"])
 LATENCY = Histogram("jobpilot_ai_latency_seconds", "AI latency", ["endpoint"])
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    global provider
+    global provider, position_index
     settings = get_settings()
     if settings.api_key:
         provider = ModelProvider(settings)
+        if settings.use_position_index:
+            try:
+                position_index = PositionIndex(settings.database_url)
+                await position_index.connect()
+            except Exception:
+                logger.exception("position index unavailable; recommendations will use request-local fallback")
+                position_index = None
     yield
     if provider:
         await provider.close()
         provider = None
+    if position_index:
+        await position_index.close()
+        position_index = None
 
 
 app = FastAPI(title="JobPilot AI Service", version="1.0.0", lifespan=lifespan)
@@ -40,7 +54,7 @@ def authorize(x_internal_api_key: str = Header(default=""), settings: Settings =
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "model_enabled": bool(get_settings().api_key)}
+    return {"status": "ok", "model_enabled": bool(get_settings().api_key), "position_index_ready": position_index is not None}
 
 
 @app.post("/v1/resumes/parse", response_model=ResumeProfile, dependencies=[Depends(authorize)])
@@ -66,7 +80,7 @@ async def parse_resume_file(file: UploadFile = File(...), target_role: str = For
 @app.post("/v1/matches/recommend", response_model=RecommendResponse, dependencies=[Depends(authorize)])
 async def recommend(request: RecommendRequest):
     started = time.perf_counter()
-    outcome = await recommend_positions(request, provider, get_settings().rerank_candidates)
+    outcome = await recommend_positions(request, provider, get_settings().rerank_candidates, position_index)
     LATENCY.labels("recommend").observe(time.perf_counter() - started)
     REQUESTS.labels("recommend", "success").inc()
     warnings = list(outcome.warnings)

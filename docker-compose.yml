@@ -49,6 +49,8 @@ services:
       AI_CHAT_MODEL: ${AI_CHAT_MODEL:-qwen-plus}
       AI_EMBEDDING_MODEL: ${AI_EMBEDDING_MODEL:-text-embedding-v4}
       AI_RERANK_CANDIDATES: ${AI_RERANK_CANDIDATES:-8}
+      AI_DATABASE_URL: postgresql://jobpilot:${JOBPILOT_VECTOR_DB_PASSWORD:-jobpilot}@postgres:5432/jobpilot_ai
+      AI_USE_POSITION_INDEX: "true"
     ports: ["8000:8000"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]

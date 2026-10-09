@@ -6,5 +6,6 @@ python-multipart==0.0.20
 pypdf==5.1.0
 python-docx==1.1.2
 prometheus-client==0.21.1
+asyncpg==0.30.0
+pgvector==0.3.6
 pytest==8.3.4
-

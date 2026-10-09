@@ -1,8 +1,9 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE TABLE IF NOT EXISTS position_embeddings (
-  position_id BIGINT PRIMARY KEY, content TEXT NOT NULL, skills JSONB NOT NULL DEFAULT '[]',
+  position_id BIGINT PRIMARY KEY, content TEXT NOT NULL, content_hash CHAR(64) NOT NULL DEFAULT '', skills JSONB NOT NULL DEFAULT '[]',
   embedding vector(1024), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE position_embeddings ADD COLUMN IF NOT EXISTS content_hash CHAR(64) NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_position_embedding ON position_embeddings USING hnsw (embedding vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS idx_position_content_fts ON position_embeddings USING gin (to_tsvector('simple', content));
 CREATE TABLE IF NOT EXISTS ai_runs (

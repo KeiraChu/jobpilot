@@ -35,6 +35,14 @@ class FakeProvider:
         ]}
 
 
+class IncompleteProvider(FakeProvider):
+    async def json(self, messages, schema, name):
+        return {"judgments": [{
+            "position_id": 1, "relevance_score": 90, "summary": "不完整结果",
+            "evidence_skills": ["python"], "missing_skills": [],
+        }]}
+
+
 def test_embedding_and_llm_rerank_preserve_evidence_boundary():
     profile = heuristic_profile("Python FastAPI RAG 项目经验", "AI应用开发")
     request = RecommendRequest(user_id="1", profile=profile, positions=[
@@ -60,3 +68,16 @@ def test_recommender_falls_back_without_model_provider():
 
     assert outcome.ranking_mode == "BASELINE"
     assert outcome.results[0].position.position_id == 1
+
+
+def test_incomplete_llm_result_falls_back_to_embedding():
+    profile = heuristic_profile("Python FastAPI RAG 项目经验", "AI应用开发")
+    request = RecommendRequest(user_id="1", profile=profile, positions=[
+        PositionInput(position_id=1, company="A", title="AI应用开发", description="Python FastAPI RAG"),
+        PositionInput(position_id=2, company="B", title="会计", description="财务报表"),
+    ], top_k=2)
+
+    outcome = asyncio.run(recommend_positions(request, IncompleteProvider(), rerank_candidates=2))
+
+    assert outcome.ranking_mode == "EMBEDDING"
+    assert any("模型重排不可用" in warning for warning in outcome.warnings)

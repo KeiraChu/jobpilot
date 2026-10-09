@@ -5,6 +5,7 @@ import com.job.entity.Position;
 import com.job.mapper.PositionMapper;
 import com.job.util.Result;
 import com.job.util.UserHolder;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -16,6 +17,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/ai")
+@Slf4j
 public class AiCareerController {
     @Resource
     private AiServiceClient client;
@@ -39,6 +41,7 @@ public class AiCareerController {
             response.put("profile", profile);
             return Result.success(response);
         } catch (Exception e) {
+            log.error("position recommendation failed for user {}", userId, e);
             return Result.fail(503, "职位推荐失败，请稍后重试");
         }
     }
@@ -46,6 +49,9 @@ public class AiCareerController {
     @PostMapping("/career-plan")
     @SuppressWarnings("unchecked")
     public Result careerPlan(@RequestBody Map<String, Object> request) {
+        if (request == null) {
+            return Result.fail("profile 和 match 不能为空");
+        }
         Object profile = request.get("profile");
         Object match = request.get("match");
         if (!(profile instanceof Map) || !(match instanceof Map)) {
@@ -54,6 +60,7 @@ public class AiCareerController {
         try {
             return Result.success(client.careerPlan((Map<String, Object>) profile, (Map<String, Object>) match));
         } catch (Exception e) {
+            log.error("career plan generation failed", e);
             return Result.fail(503, "求职计划生成失败，请稍后重试");
         }
     }
