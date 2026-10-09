@@ -1,4 +1,5 @@
 import hashlib
+import json
 
 import asyncpg
 from pgvector.asyncpg import register_vector
@@ -20,6 +21,11 @@ class PositionIndex:
 
     async def connect(self) -> None:
         self.pool = await asyncpg.create_pool(self.database_url, init=register_vector, min_size=1, max_size=5)
+        await self.pool.execute("ALTER TABLE position_embeddings ADD COLUMN IF NOT EXISTS content_hash CHAR(64) NOT NULL DEFAULT ''")
+        await self.pool.execute("ALTER TABLE ai_runs ADD COLUMN IF NOT EXISTS embedding_tokens INTEGER")
+        await self.pool.execute("ALTER TABLE ai_runs ADD COLUMN IF NOT EXISTS estimated_cost NUMERIC(12,6)")
+        await self.pool.execute("ALTER TABLE ai_runs ADD COLUMN IF NOT EXISTS stage_latency JSONB NOT NULL DEFAULT '{}'::jsonb")
+        await self.pool.execute("ALTER TABLE ai_runs ADD COLUMN IF NOT EXISTS fallback_reasons JSONB NOT NULL DEFAULT '[]'::jsonb")
 
     async def close(self) -> None:
         if self.pool:
@@ -81,3 +87,17 @@ class PositionIndex:
             limit,
         )
         return [row["position_id"] for row in rows]
+
+    async def save_run(self, *, run_id: str, user_id: str, workflow: str, status: str, model: str, latency_ms: int, usage: dict, stage_latency: dict, fallback_reasons: list[str]) -> None:
+        if not self.pool:
+            return
+        await self.pool.execute(
+            """INSERT INTO ai_runs(run_id, user_id, workflow, status, model, latency_ms,
+                                   input_tokens, output_tokens, embedding_tokens, estimated_cost,
+                                   stage_latency, fallback_reasons)
+               VALUES($1::uuid,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb)""",
+            run_id, user_id, workflow, status, model, latency_ms,
+            int(usage.get("input_tokens", 0)), int(usage.get("output_tokens", 0)),
+            int(usage.get("embedding_tokens", 0)), float(usage.get("estimated_cost", 0)),
+            json.dumps(stage_latency), json.dumps(fallback_reasons),
+        )

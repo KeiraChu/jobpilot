@@ -1,5 +1,6 @@
 import asyncio
 import os
+from uuid import uuid4
 
 import pytest
 
@@ -39,6 +40,12 @@ def test_pgvector_and_full_text_retrieve_candidates():
             query_embedding = (await provider.embed([query]))[0]
             result = await index.search(query, query_embedding, 2)
             assert result[0] == 900001
+            await index.save_run(
+                run_id=str(uuid4()), user_id="integration", workflow="TEST", status="SUCCESS",
+                model="fake", latency_ms=12,
+                usage={"input_tokens": 3, "output_tokens": 2, "embedding_tokens": 5, "estimated_cost": 0.01},
+                stage_latency={"total": 12}, fallback_reasons=[],
+            )
         finally:
             await index.close()
 

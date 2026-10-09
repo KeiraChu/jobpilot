@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     rerank_candidates: int = 8
     database_url: str = "postgresql://jobpilot:jobpilot@localhost:5432/jobpilot_ai"
     use_position_index: bool = True
+    chat_input_cost_per_million: float = 0.0
+    chat_output_cost_per_million: float = 0.0
+    embedding_cost_per_million: float = 0.0
 
 
 @lru_cache

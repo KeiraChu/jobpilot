@@ -1,6 +1,7 @@
 import json
 import logging
 import math
+import time
 from dataclasses import dataclass
 
 from app.provider import ModelProvider
@@ -15,6 +16,8 @@ class RecommendationOutcome:
     ranking_mode: str
     algorithm_version: str
     warnings: list[str]
+    stage_latency_ms: dict[str, float]
+    fallback_reasons: list[str]
 
 
 def _profile_text(request: RecommendRequest) -> str:
@@ -65,16 +68,20 @@ async def recommend_positions(
     rerank_candidates: int = 8,
     position_index: PositionIndex | None = None,
 ) -> RecommendationOutcome:
+    started = time.perf_counter()
     candidate_count = min(max(request.top_k, rerank_candidates), len(request.positions), 50)
     candidates = rank(request.model_copy(update={"top_k": candidate_count}))
+    stage_latency = {"baseline": round((time.perf_counter() - started) * 1000, 2)}
     warnings: list[str] = []
     if provider is None:
         return RecommendationOutcome(
             results=candidates[: request.top_k], ranking_mode="BASELINE",
             algorithm_version="evidence-ranker-v3", warnings=["未配置模型服务，当前使用可解释基线排序。"],
+            stage_latency_ms=stage_latency, fallback_reasons=["MODEL_PROVIDER_NOT_CONFIGURED"],
         )
 
     try:
+        retrieval_started = time.perf_counter()
         profile_text = _profile_text(request)
         resume_embedding = (await provider.embed([profile_text]))[0]
         if position_index is not None:
@@ -94,11 +101,13 @@ async def recommend_positions(
             trace = "通过 pgvector 与全文检索召回候选，再结合技能证据完成排序" if position_index else "使用 Embedding 对基线候选进行语义重排"
             result.decision_trace.insert(0, trace)
         candidates.sort(key=lambda item: item.score, reverse=True)
+        stage_latency["embedding_retrieval"] = round((time.perf_counter() - retrieval_started) * 1000, 2)
     except Exception:
         logging.getLogger(__name__).exception("embedding retrieval failed")
         return RecommendationOutcome(
             results=candidates[: request.top_k], ranking_mode="BASELINE",
             algorithm_version="evidence-ranker-v3", warnings=["Embedding 服务不可用，已降级为可解释基线排序。"],
+            stage_latency_ms=stage_latency, fallback_reasons=["EMBEDDING_RETRIEVAL_FAILED"],
         )
 
     shortlist = candidates[: min(rerank_candidates, len(candidates))]
@@ -126,6 +135,7 @@ async def recommend_positions(
         }, ensure_ascii=False)},
     ]
     try:
+        rerank_started = time.perf_counter()
         payload = await provider.json(messages, _rerank_schema(), "job_match_rerank")
         by_id = {item.position.position_id: item for item in shortlist}
         judgments = payload.get("judgments", [])
@@ -149,9 +159,11 @@ async def recommend_positions(
                 result.risks.insert(0, f"岗位要求中尚未识别：{'、'.join(missing)}。")
             result.decision_trace.insert(0, "大模型仅在候选集内重排，并受结构化输出与证据白名单约束")
         candidates.sort(key=lambda item: item.score, reverse=True)
+        stage_latency["llm_rerank"] = round((time.perf_counter() - rerank_started) * 1000, 2)
         return RecommendationOutcome(
             results=candidates[: request.top_k], ranking_mode="LLM_RERANK",
             algorithm_version="hybrid-embedding-llm-rerank-v1", warnings=warnings,
+            stage_latency_ms=stage_latency, fallback_reasons=[],
         )
     except Exception:
         logging.getLogger(__name__).exception("llm rerank failed")
@@ -159,4 +171,5 @@ async def recommend_positions(
         return RecommendationOutcome(
             results=candidates[: request.top_k], ranking_mode="EMBEDDING",
             algorithm_version="hybrid-embedding-v1", warnings=warnings,
+            stage_latency_ms=stage_latency, fallback_reasons=["LLM_RERANK_FAILED"],
         )

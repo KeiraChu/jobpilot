@@ -17,14 +17,21 @@
     <el-alert v-for="warning in warnings" :key="warning" :title="warning" type="warning" show-icon />
 
     <section v-if="profile" class="panel">
-      <header><h2>简历能力画像</h2><span>解析置信度 {{ Math.round(profile.confidence * 100) }}%</span></header>
+      <header><h2>简历能力画像</h2><span>{{ profile.parsing_mode === 'LLM_STRUCTURED' ? '结构化模型解析' : '规则解析' }} · 置信度 {{ Math.round(profile.confidence * 100) }}%</span></header>
       <p class="hint">AI 解析结果需要你确认。删除误识别技能，或补充简历中确实存在的技能后重新匹配。</p>
+      <el-alert v-for="warning in profile.warnings || []" :key="warning" :title="warning" type="warning" :closable="false" show-icon />
       <div class="skills">
         <el-tag v-for="skill in profile.skills" :key="skill" closable @close="removeSkill(skill)">{{ skill }}</el-tag>
         <el-input v-if="skillInputVisible" ref="skillInput" v-model="skillInput" size="small" class="skill-input" @keyup.enter.native="addSkill" @blur="addSkill" />
         <el-button v-else size="small" @click="showSkillInput">+ 添加真实技能</el-button>
       </div>
       <p v-if="!profile.skills.length">尚未识别到标准化技能，请完善简历中的技术栈和项目描述。</p>
+      <div v-if="profile.evidence && profile.evidence.length" class="source-evidence">
+        <h3>原文证据</h3>
+        <p v-for="item in profile.evidence" :key="`${item.field}-${item.start}-${item.value}`">
+          <strong>{{ item.value }}</strong><span>“{{ item.quote }}” · 原文位置 {{ item.start }}–{{ item.end }}</span>
+        </p>
+      </div>
       <el-button type="primary" :loading="reranking" class="rerank" @click="rerank">确认画像并重新匹配</el-button>
     </section>
 
@@ -144,5 +151,5 @@ export default {
 </script>
 
 <style scoped>
-.copilot{min-height:100vh;background:#f4f7fb;padding:40px 7%;color:#152238}.hero{display:grid;grid-template-columns:1.4fr 1fr;gap:30px;padding:42px;border-radius:24px;background:linear-gradient(135deg,#081d3a,#1454a3);color:white}.hero h1{font-size:40px;margin:8px 0 16px}.eyebrow{letter-spacing:2px;color:#7dd3fc}.upload-card{display:flex;flex-direction:column;gap:14px;background:white;color:#526174;padding:24px;border-radius:16px}.panel,.match-card{background:white;border-radius:18px;padding:24px;margin-top:22px;box-shadow:0 8px 30px rgba(15,42,80,.07)}.panel header,.match-main header{display:flex;justify-content:space-between;align-items:center}.hint{color:#667085}.skills{display:flex;gap:8px;flex-wrap:wrap}.skill-input{width:150px}.rerank{margin-top:18px}.ranking-mode{color:#526174;font-size:13px;margin:20px 0 0}.match-card{display:flex;gap:24px}.score{width:90px;height:90px;border-radius:50%;background:#e7f1ff;color:#0759bd;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:30px;font-weight:bold;flex:none}.score small{font-size:12px}.match-main{flex:1}.breakdown{display:flex;gap:12px;flex-wrap:wrap;margin:18px 0}.breakdown span{background:#f0f5fb;padding:7px 12px;border-radius:8px}.columns{display:grid;grid-template-columns:1fr 1fr;gap:24px}.actions{margin-top:16px;padding:14px 16px;background:#f8fafc;border-radius:10px}.actions p{margin:8px 0}.actions small{color:#667085}.feedback{display:flex;align-items:center;gap:8px;margin-top:18px;padding-top:14px;border-top:1px solid #edf1f6;color:#667085}.step{border-left:3px solid #1677ff;padding-left:14px;margin:14px 0}@media(max-width:800px){.hero,.columns{grid-template-columns:1fr}.match-card{flex-direction:column}.feedback{flex-wrap:wrap}}
+.copilot{min-height:100vh;background:#f4f7fb;padding:40px 7%;color:#152238}.hero{display:grid;grid-template-columns:1.4fr 1fr;gap:30px;padding:42px;border-radius:24px;background:linear-gradient(135deg,#081d3a,#1454a3);color:white}.hero h1{font-size:40px;margin:8px 0 16px}.eyebrow{letter-spacing:2px;color:#7dd3fc}.upload-card{display:flex;flex-direction:column;gap:14px;background:white;color:#526174;padding:24px;border-radius:16px}.panel,.match-card{background:white;border-radius:18px;padding:24px;margin-top:22px;box-shadow:0 8px 30px rgba(15,42,80,.07)}.panel header,.match-main header{display:flex;justify-content:space-between;align-items:center}.hint{color:#667085}.skills{display:flex;gap:8px;flex-wrap:wrap}.source-evidence{margin-top:18px;padding:14px 16px;background:#f8fafc;border-radius:10px}.source-evidence p{display:flex;gap:14px;margin:8px 0}.source-evidence span{color:#667085}.skill-input{width:150px}.rerank{margin-top:18px}.ranking-mode{color:#526174;font-size:13px;margin:20px 0 0}.match-card{display:flex;gap:24px}.score{width:90px;height:90px;border-radius:50%;background:#e7f1ff;color:#0759bd;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:30px;font-weight:bold;flex:none}.score small{font-size:12px}.match-main{flex:1}.breakdown{display:flex;gap:12px;flex-wrap:wrap;margin:18px 0}.breakdown span{background:#f0f5fb;padding:7px 12px;border-radius:8px}.columns{display:grid;grid-template-columns:1fr 1fr;gap:24px}.actions{margin-top:16px;padding:14px 16px;background:#f8fafc;border-radius:10px}.actions p{margin:8px 0}.actions small{color:#667085}.feedback{display:flex;align-items:center;gap:8px;margin-top:18px;padding-top:14px;border-top:1px solid #edf1f6;color:#667085}.step{border-left:3px solid #1677ff;padding-left:14px;margin:14px 0}@media(max-width:800px){.hero,.columns{grid-template-columns:1fr}.match-card{flex-direction:column}.feedback{flex-wrap:wrap}.source-evidence p{flex-direction:column;gap:4px}}
 </style>

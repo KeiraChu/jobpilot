@@ -1,5 +1,6 @@
 import logging
 import time
+from uuid import uuid4
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
@@ -7,7 +8,7 @@ from prometheus_client import Counter, Histogram, make_asgi_app
 
 from app.config import Settings, get_settings
 from app.evaluation import evaluate
-from app.parsing import extract_file_text, heuristic_profile
+from app.parsing import extract_file_text, structured_profile
 from app.provider import ModelProvider
 from app.position_store import PositionIndex
 from app.recommender import recommend_positions
@@ -59,12 +60,21 @@ async def health():
 
 @app.post("/v1/resumes/parse", response_model=ResumeProfile, dependencies=[Depends(authorize)])
 async def parse_resume(request: ParseRequest):
-    # 确定性解析保证无模型密钥也可演示；大模型增强可在此结果上做严格 Schema 补全。
-    return heuristic_profile(request.text, request.target_role)
+    started = time.perf_counter()
+    if provider:
+        provider.reset_usage()
+    profile = await structured_profile(request.text, request.target_role, provider)
+    profile.stage_latency_ms = {"parse": round((time.perf_counter() - started) * 1000, 2)}
+    profile.model_usage = provider.usage_summary() if provider else {}
+    profile.telemetry_id = str(uuid4())
+    if position_index:
+        await position_index.save_run(run_id=profile.telemetry_id, user_id="anonymous", workflow="RESUME_PARSE", status="SUCCESS", model=get_settings().chat_model if provider else "heuristic", latency_ms=int(profile.stage_latency_ms["parse"]), usage=profile.model_usage, stage_latency=profile.stage_latency_ms, fallback_reasons=[] if profile.parsing_mode == "LLM_STRUCTURED" else ["HEURISTIC_PARSE"])
+    return profile
 
 
 @app.post("/v1/resumes/files", response_model=ResumeProfile, dependencies=[Depends(authorize)])
 async def parse_resume_file(file: UploadFile = File(...), target_role: str = Form(default="")):
+    started = time.perf_counter()
     content = await file.read()
     if len(content) > 20 * 1024 * 1024:
         raise HTTPException(413, "文件不能超过 20MB")
@@ -74,24 +84,42 @@ async def parse_resume_file(file: UploadFile = File(...), target_role: str = For
         raise HTTPException(415, str(exc)) from exc
     if len(text.strip()) < 10:
         raise HTTPException(422, "未提取到有效简历文本；扫描版 PDF 请先进行 OCR")
-    return heuristic_profile(text, target_role)
+    if provider:
+        provider.reset_usage()
+    profile = await structured_profile(text, target_role, provider)
+    profile.stage_latency_ms = {"extract_and_parse": round((time.perf_counter() - started) * 1000, 2)}
+    profile.model_usage = provider.usage_summary() if provider else {}
+    profile.telemetry_id = str(uuid4())
+    if position_index:
+        await position_index.save_run(run_id=profile.telemetry_id, user_id="anonymous", workflow="RESUME_FILE_PARSE", status="SUCCESS", model=get_settings().chat_model if provider else "heuristic", latency_ms=int(profile.stage_latency_ms["extract_and_parse"]), usage=profile.model_usage, stage_latency=profile.stage_latency_ms, fallback_reasons=[] if profile.parsing_mode == "LLM_STRUCTURED" else ["HEURISTIC_PARSE"])
+    return profile
 
 
 @app.post("/v1/matches/recommend", response_model=RecommendResponse, dependencies=[Depends(authorize)])
 async def recommend(request: RecommendRequest):
     started = time.perf_counter()
+    if provider:
+        provider.reset_usage()
     outcome = await recommend_positions(request, provider, get_settings().rerank_candidates, position_index)
     LATENCY.labels("recommend").observe(time.perf_counter() - started)
     REQUESTS.labels("recommend", "success").inc()
     warnings = list(outcome.warnings)
     if not request.profile.skills:
         warnings.append("简历未识别到技能，推荐结果主要基于文本语义，请先确认解析结果。")
-    return RecommendResponse(
+    telemetry_id = str(uuid4())
+    response = RecommendResponse(
         algorithm_version=outcome.algorithm_version,
         ranking_mode=outcome.ranking_mode,
         results=outcome.results,
         warnings=warnings,
+        stage_latency_ms={**outcome.stage_latency_ms, "total": round((time.perf_counter() - started) * 1000, 2)},
+        model_usage=provider.usage_summary() if provider else {},
+        fallback_reasons=outcome.fallback_reasons,
+        telemetry_id=telemetry_id,
     )
+    if position_index:
+        await position_index.save_run(run_id=telemetry_id, user_id=request.user_id, workflow="POSITION_RECOMMEND", status="SUCCESS", model=get_settings().chat_model if provider else "baseline", latency_ms=int(response.stage_latency_ms["total"]), usage=response.model_usage, stage_latency=response.stage_latency_ms, fallback_reasons=response.fallback_reasons)
+    return response
 
 
 @app.post("/v1/workflows/career-plan", response_model=CareerPlan, dependencies=[Depends(authorize)])

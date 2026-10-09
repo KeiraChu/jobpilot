@@ -10,6 +10,14 @@ class Experience(BaseModel):
     description: str = ""
 
 
+class SourceEvidence(BaseModel):
+    field: str
+    value: str
+    quote: str
+    start: int = Field(ge=0)
+    end: int = Field(ge=0)
+
+
 class ResumeProfile(BaseModel):
     target_role: str = ""
     city_preferences: list[str] = Field(default_factory=list)
@@ -19,6 +27,12 @@ class ResumeProfile(BaseModel):
     skills: list[str] = Field(default_factory=list)
     summary: str = ""
     confidence: float = Field(default=0.6, ge=0, le=1)
+    evidence: list[SourceEvidence] = Field(default_factory=list)
+    parsing_mode: Literal["HEURISTIC", "LLM_STRUCTURED"] = "HEURISTIC"
+    warnings: list[str] = Field(default_factory=list)
+    stage_latency_ms: dict[str, float] = Field(default_factory=dict)
+    model_usage: dict[str, float | int | str] = Field(default_factory=dict)
+    telemetry_id: str = ""
 
 
 class ParseRequest(BaseModel):
@@ -74,6 +88,10 @@ class RecommendResponse(BaseModel):
     ranking_mode: Literal["BASELINE", "EMBEDDING", "LLM_RERANK"] = "BASELINE"
     results: list[MatchResult]
     warnings: list[str] = Field(default_factory=list)
+    stage_latency_ms: dict[str, float] = Field(default_factory=dict)
+    model_usage: dict[str, float | int | str] = Field(default_factory=dict)
+    fallback_reasons: list[str] = Field(default_factory=list)
+    telemetry_id: str = ""
 
 
 class CareerPlanRequest(BaseModel):

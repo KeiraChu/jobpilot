@@ -9,5 +9,11 @@ CREATE INDEX IF NOT EXISTS idx_position_content_fts ON position_embeddings USING
 CREATE TABLE IF NOT EXISTS ai_runs (
   run_id UUID PRIMARY KEY, user_id VARCHAR(64) NOT NULL, workflow VARCHAR(64) NOT NULL,
   status VARCHAR(32) NOT NULL, model VARCHAR(128), latency_ms INTEGER,
-  input_tokens INTEGER, output_tokens INTEGER, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  input_tokens INTEGER, output_tokens INTEGER, embedding_tokens INTEGER, estimated_cost NUMERIC(12,6),
+  stage_latency JSONB NOT NULL DEFAULT '{}'::jsonb, fallback_reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE ai_runs ADD COLUMN IF NOT EXISTS embedding_tokens INTEGER;
+ALTER TABLE ai_runs ADD COLUMN IF NOT EXISTS estimated_cost NUMERIC(12,6);
+ALTER TABLE ai_runs ADD COLUMN IF NOT EXISTS stage_latency JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE ai_runs ADD COLUMN IF NOT EXISTS fallback_reasons JSONB NOT NULL DEFAULT '[]'::jsonb;

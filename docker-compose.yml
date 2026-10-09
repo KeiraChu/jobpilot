@@ -51,6 +51,9 @@ services:
       AI_RERANK_CANDIDATES: ${AI_RERANK_CANDIDATES:-8}
       AI_DATABASE_URL: postgresql://jobpilot:${JOBPILOT_VECTOR_DB_PASSWORD:-jobpilot}@postgres:5432/jobpilot_ai
       AI_USE_POSITION_INDEX: "true"
+      AI_CHAT_INPUT_COST_PER_MILLION: ${AI_CHAT_INPUT_COST_PER_MILLION:-0}
+      AI_CHAT_OUTPUT_COST_PER_MILLION: ${AI_CHAT_OUTPUT_COST_PER_MILLION:-0}
+      AI_EMBEDDING_COST_PER_MILLION: ${AI_EMBEDDING_COST_PER_MILLION:-0}
     ports: ["8000:8000"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
